@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>孫子兵法1-3填字大挑戰 - 擴增版</title>
+    <title>孫子兵法1-3填字大挑戰 - 雲端自動同步版</title>
     <style>
         :root {
             --bg-color: #FFFF00;
@@ -23,7 +23,6 @@
 
         .hidden { display: none !important; }
 
-        /* 初始畫面 */
         #start-screen {
             width: 100%; height: 100%; display: flex; flex-direction: column;
             align-items: center; justify-content: flex-start; overflow-y: auto;
@@ -49,30 +48,19 @@
             background-color: #000; color: #fff; border: none; border-radius: 8px; cursor: pointer;
         }
 
-        /* 遊戲畫面 */
         #game-screen { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; }
 
         #question-area {
-            position: absolute; 
-            top: 50px; 
-            width: 100%;
-            height: 45%; 
-            display: flex;
-            flex-direction: column-reverse; 
-            justify-content: flex-start; 
-            align-items: center; 
-            gap: 12px;
-            overflow: hidden;
+            position: absolute; top: 50px; width: 100%; height: 45%; 
+            display: flex; flex-direction: column-reverse; justify-content: flex-start; 
+            align-items: center; gap: 12px; overflow: hidden;
         }
 
         .question-row {
             font-size: 22px; font-weight: bold; color: #000;
             width: 95%; text-align: center; line-height: 1.4;
-            position: relative;
-            background: rgba(255,255,255,0.4);
-            border-radius: 10px;
-            padding: 8px 0;
-            border: 1px solid rgba(0,0,0,0.1);
+            position: relative; background: rgba(255,255,255,0.4);
+            border-radius: 10px; padding: 8px 0; border: 1px solid rgba(0,0,0,0.1);
         }
 
         .q-box {
@@ -129,6 +117,7 @@
             display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center;
         }
         .final-score-text { font-size: 85px; font-weight: bold; color: #FF0000; margin: 10px 0; }
+        #status-msg { font-size: 14px; color: #666; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -171,13 +160,27 @@
     <div id="end-screen" class="hidden">
         <div style="font-size: 24px; font-weight: bold;">挑戰結束！您的答對題數</div>
         <div class="final-score-text" id="final-score">0</div>
-        <div id="final-info" style="font-size: 18px; line-height: 2;"></div>
-        <div id="final-time" style="font-size: 16px; margin-top: 20px; font-style: italic;"></div>
+        <div id="final-info" style="font-size: 18px; line-height: 1.6;"></div>
+        <div id="final-time" style="font-size: 16px; margin-top: 20px; color: #555;"></div>
+        <div id="status-msg">正在自動同步成績至雲端...</div>
         <button onclick="location.reload()" style="margin-top:20px; padding:12px 25px; font-size:16px; cursor:pointer;">再次挑戰</button>
     </div>
 
     <script>
-        // 擴增後的題目資料庫：包含〈始計〉、〈作戰〉、〈謀攻〉
+        // --- Google 表單整合設定 ---
+        const formURL = "https://docs.google.com/forms/d/e/1FAIpQLSf3-KJa6mzbDV1bPsGQnnN0LQIVfuSw1ldrWGeccWwFJsbW_g/formResponse";
+        
+        // 欄位對位修正
+        const entryIDs = {
+            class: "entry.292364586",  // 班級
+            id:    "entry.1967720118", // 學號 (修正：與姓名交換)
+            name:  "entry.481638682",  // 姓名 (修正：與學號交換)
+            code:  "entry.1641200185", // 代碼
+            score: "entry.1580440062", // 成績 (修正：與結束時間交換)
+            start: "entry.119796084",  // 開始時間
+            end:   "entry.313936755"   // 結束時間 (修正：與成績交換)
+        };
+
         const sentences = [
             "孫子曰：兵者，國之大事也。", "死生之地，存亡之道，不可不察也。", "經之以五事，校之以計，而索其情。",
             "一曰道，二曰天，三曰地，", "四曰將，五曰法。", "道者，令民與上同意也。",
@@ -206,8 +209,8 @@
         const filter = ["曰","者","之","也","而","其","孰","矣","，","、","：","。","？"];
         let score = 0, timeLeft = 180, activeQs = [];
         let selectedId = null, gameTimer, spawnTimer;
-        let isProcessing = false;
-        let isComposing = false;
+        let isProcessing = false, isComposing = false;
+        let startTime = null;
 
         document.getElementById('start-btn').addEventListener('click', function() {
             if (['class-in', 'name-in', 'id-in', 'code-in'].some(id => !document.getElementById(id).value)) {
@@ -218,6 +221,7 @@
         });
 
         function startGame() {
+            startTime = new Date();
             document.getElementById('start-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             activeQs = []; score = 0; timeLeft = 180;
@@ -246,11 +250,8 @@
             let targetIdx = chars[Math.floor(Math.random() * chars.length)];
             
             const newQ = { id: Date.now(), text: str, ans: str[targetIdx], pos: targetIdx, timer: 0 };
-            activeQs.unshift(newQ); // 新題目加在最前面 (對應顯示最下方)
-
-            if (selectedId === null) {
-                selectedId = newQ.id;
-            }
+            activeQs.unshift(newQ);
+            if (selectedId === null) selectedId = newQ.id;
             
             if (activeQs.length > 5) {
                 activeQs.pop();
@@ -289,7 +290,6 @@
             isComposing = false;
             checkAnswer(e.data);
         });
-
         inputEl.addEventListener('input', (e) => {
             if (isComposing) return;
             if (e.target.value) checkAnswer(e.target.value);
@@ -304,7 +304,6 @@
 
             if (q && val === q.ans) {
                 const pts = Math.max(1, 5 - idx); 
-                
                 score += pts;
                 triggerFlash('flash-green');
                 showTextAnim("+" + pts, "blue", "row-" + q.id);
@@ -343,17 +342,61 @@
             setTimeout(() => anim.remove(), 800);
         }
 
+        function formatTime(date) {
+            return date.getHours().toString().padStart(2, '0') + ":" + 
+                   date.getMinutes().toString().padStart(2, '0') + ":" + 
+                   date.getSeconds().toString().padStart(2, '0');
+        }
+
         function endGame() {
+            const endTime = new Date();
             clearInterval(gameTimer); clearInterval(spawnTimer);
             document.getElementById('game-screen').classList.add('hidden');
             document.getElementById('end-screen').classList.remove('hidden');
             document.getElementById('final-score').innerText = score;
+
+            const classVal = document.getElementById('class-in').value;
+            const nameVal = document.getElementById('name-in').value;
+            const idVal = document.getElementById('id-in').value;
+            const codeVal = document.getElementById('code-in').value;
+            const startT = formatTime(startTime);
+            const endT = formatTime(endTime);
+
             document.getElementById('final-info').innerHTML = `
-                班級：${document.getElementById('class-in').value} | 姓名：${document.getElementById('name-in').value}<br>
-                學號：${document.getElementById('id-in').value} | 代碼：${document.getElementById('code-in').value}
+                班級：${classVal} | 姓名：${nameVal}<br>
+                學號：${idVal} | 代碼：${codeVal}
             `;
-            const d = new Date();
-            document.getElementById('final-time').innerText = "測驗時間：" + d.toLocaleString();
+            document.getElementById('final-time').innerHTML = `
+                測驗日期：${endTime.toLocaleDateString()}<br>
+                開始時間：${startT} | 結束時間：${endT}
+            `;
+
+            uploadToGoogleForm(classVal, idVal, nameVal, codeVal, score, startT, endT);
+        }
+
+        function uploadToGoogleForm(cls, id, name, code, sc, st, et) {
+            const formData = new URLSearchParams();
+            formData.append(entryIDs.class, cls);
+            formData.append(entryIDs.id, id);
+            formData.append(entryIDs.name, name);
+            formData.append(entryIDs.code, code);
+            formData.append(entryIDs.score, sc);
+            formData.append(entryIDs.start, st);
+            formData.append(entryIDs.end, et);
+
+            fetch(formURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: formData
+            })
+            .then(() => {
+                document.getElementById('status-msg').innerText = "✅ 成績已成功同步至雲端硬碟";
+                document.getElementById('status-msg').style.color = "green";
+            })
+            .catch(err => {
+                document.getElementById('status-msg').innerText = "❌ 同步失敗，請檢查網路後截圖成績";
+                document.getElementById('status-msg').style.color = "red";
+            });
         }
     </script>
 </body>
